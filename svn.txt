@@ -1,0 +1,4 @@
+svn --version
+mkdir /opt/svn
+svnadmin create /opt/svn/runoob		svn命令创建版本库
+svnserve -d -r /opt/svn			svnserve启动服务指定到版本库的上级目录

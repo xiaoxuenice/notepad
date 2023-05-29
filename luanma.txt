@@ -1,0 +1,14 @@
+文本内容转换   iconv
+文件名转换     convmv
+
+convmv -f gbk -t utf-8 -r --notest /home/wwwroot
+常用参数：
+-r 递归处理子文件夹
+–notest 真正进行操作，默认情况下是不对文件进行真实操作
+–list 显示所有支持的编码
+–unescap 可以做一下转义，比如把%20变成空格
+-i 交互模式（询问每一个转换，防止误操作）
+
+iconv -f gbk -t utf-8 wap/index.php -o wap/index.php
+
+for i in `find ./ -type f `;do if [ `file ${i} |awk '{print $4}'` == 'ISO-8859' ];then  iconv -f gbk -t utf-8 ${i} -o ${i} ;fi;done

@@ -1,0 +1,655 @@
+目录
+
+ 
+
+ 一、FastDFS介绍
+
+1.1 简介
+
+1.2   FastDFS架构
+
+1.2.1 Tracker 集群
+
+1.2.2 Storage 集群
+
+1.2.3  Storage状态收集
+
+1.2.4 FastDFS的上传过程
+
+1.2.5 FastDFS的文件同步
+
+1.2.6 FastDFS的文件下载
+
+二、安装FastDFS
+
+2.1 环境准备
+
+2.2 CentOS安装GCC
+
+2.3 安装libevent
+
+2.4 安装libfastcommon
+
+2.5 安装FastDFS
+
+2.6 配置FastDFS跟踪器(Tracker)
+
+2.7 配置 FastDFS 存储 (Storage)
+
+2.8 上传测试
+
+三、安装配置Nginx ，http访问文件
+
+四、FastDFS 配置 Nginx 模块
+
+4.1 安装配置fastdfs-nginx-module模块
+
+五 最终部署结构图
+
+六、Java客户端
+
+1、首先需要搭建 FastDFS 客户端Java开发环境
+
+2、客户端API
+
+七、权限控制
+
+ 一、FastDFS介绍
+FastDFS开源地址：https://github.com/happyfish100
+
+1.1 简介
+       FastDFS是一款类Google FS的开源分布式文件系统，它用纯C语言实现，支持Linux、FreeBSD、AIX等UNIX系统。它只能通过 专有API对文件进行存取访问，不支持POSIX接口方式，不能mount使用。准确地讲，Google FS以及FastDFS、mogileFS、 HDFS、TFS等类Google FS都不是系统级的分布式文件系统，而是应用级的分布式文件存储服务。    
+
+       FastDFS 是一个开源的高性能分布式文件系统（DFS）。 它的主要功能包括：文件存储，文件同步和文件访问，以及高容量和负载平衡。主要解决了海量数据存储问题，特别适合以中小文件（建议范围：4KB < file_size <500MB）为载体的在线服务。
+
+1.2   FastDFS架构
+FastDFS架构包括 Tracker server和Storage server。客户端请求Tracker server进行文件上传、下载，通过Trackerserver调度最终由Storage server完成文件上传和下载。
+
+FastDFS 系统有三个角色：跟踪服务器(Tracker Server)、存储服务器(Storage Server)和客户端(Client)。
+
+　　Tracker Server：跟踪服务器，主要做调度工作，起到均衡的作用；负责管理所有的 storage server和 group，每个 storage 在启动后会连接 Tracker，告知自己所属 group 等信息，并保持周期性心跳。通过Trackerserver在文件上传时可以根据一些策略找到Storageserver提供文件上传服务。
+
+　　Storage Server：存储服务器，主要提供容量和备份服务；以 group 为单位，每个 group 内可以有多台 storage server，数据互为备份。Storage server没有实现自己的文件系统而是利用操作系统 的文件系统来管理文件。
+
+　　Client：客户端，上传下载数据的服务器，也就是我们自己的项目所部署在的服务器。
+
+ 
+
+ 
+
+ 
+
+1.2.1 Tracker 集群
+         FastDFS集群中的Tracker server可以有多台，Trackerserver之间是相互平等关系同时提供服务，Trackerserver不存在单点故障。客户端请求Trackerserver采用轮询方式，如果请求的tracker无法提供服务则换另一个tracker。
+ 
+
+1.2.2 Storage 集群
+为了支持大容量，存储节点（服务器）采用了分卷（或分组）的组织方式。存储系统由一个或多个卷组成，卷与卷之间的文件是相互独立的，所有卷的文件容量累加就是整个存储系统中的文件容量。一个卷由一台或多台存储服务器组成，卷内的Storage server之间是平等关系，不同卷的Storageserver之间不会相互通信，同卷内的Storageserver之间会相互连接进行文件同步，从而保证同组内每个storage上的文件完全一致的。一个卷的存储容量为该组内存储服务器容量最小的那个，由此可见组内存储服务器的软硬件配置最好是一致的。卷中的多台存储服务器起到了冗余备份和负载均衡的作用
+
+在卷中增加服务器时，同步已有的文件由系统自动完成，同步完成后，系统自动将新增服务器切换到线上提供服务。当存储空间不足或即将耗尽时，可以动态添加卷。只需要增加一台或多台服务器，并将它们配置为一个新的卷，这样就扩大了存储系统的容量。
+
+采用分组存储方式的好处是灵活、可控性较强。比如上传文件时，可以由客户端直接指定上传到的组也可以由tracker进行调度选择。一个分组的存储服务器访问压力较大时，可以在该组增加存储服务器来扩充服务能力（纵向扩容）。当系统容量不足时，可以增加组来扩充存储容量（横向扩容）。
+
+1.2.3  Storage状态收集
+         Storage server会连接集群中所有的Tracker server，定时向他们报告自己的状态，包括磁盘剩余空间、文件同步状况、文件上传下载次数等统计信息。
+
+
+1.2.4 FastDFS的上传过程
+FastDFS向使用者提供基本文件访问接口，比如upload、download、append、delete等，以客户端库的方式提供给用户使用。
+
+Storage Server会定期的向Tracker Server发送自己的存储信息。当Tracker Server Cluster中的Tracker Server不止一个时，各个Tracker之间的关系是对等的，所以客户端上传时可以选择任意一个Tracker。
+
+当Tracker收到客户端上传文件的请求时，会为该文件分配一个可以存储文件的group，当选定了group后就要决定给客户端分配group中的哪一个storage server。当分配好storage server后，客户端向storage发送写文件请求，storage将会为文件分配一个数据存储目录。然后为文件分配一个fileid，最后根据以上的信息生成文件名存储文件。
+
+ 
+
+
+
+客户端上传文件后存储服务器将文件ID返回给客户端，此文件ID用于以后访问该文件的索引信息。文件索引信息包括：组名，虚拟磁盘路径，数据两级目录，文件名。
+
+
+
+组名：文件上传后所在的storage组名称，在文件上传成功后有storage服务器返回，需要客户端自行保存。
+
+ 虚拟磁盘路径：storage配置的虚拟路径，与磁盘选项store_path*对应。如果配置了store_path0则是M00，如果配置了store_path1则是M01，以此类推。
+
+数据两级目录：storage服务器在每个虚拟磁盘路径下创建的两级目录，用于存储数据文件。
+
+文件名：与文件上传时不同。是由存储服务器根据特定信息生成，文件名包含：源存储服务器IP地址、文件创建时间戳、文件大小、随机数和文件拓展名等信息。
+ 
+
+
+1.2.5 FastDFS的文件同步
+写文件时，客户端将文件写至group内一个storage server即认为写文件成功，storage server写完文件后，会由后台线程将文件同步至同group内其他的storage server。
+
+每个storage写文件后，同时会写一份binlog，binlog里不包含文件数据，只包含文件名等元信息，这份binlog用于后台同步，storage会记录向group内其他storage同步的进度，以便重启后能接上次的进度继续同步；进度以时间戳的方式进行记录，所以最好能保证集群内所有server的时钟保持同步。
+
+storage的同步进度会作为元数据的一部分汇报到tracker上，tracke在选择读storage的时候会以同步进度作为参考。
+
+
+1.2.6 FastDFS的文件下载
+客户端uploadfile成功后，会拿到一个storage生成的文件名，接下来客户端根据这个文件名即可访问到该文件。
+
+ 
+
+
+
+跟upload file一样，在downloadfile时客户端可以选择任意tracker server。tracker发送download请求给某个tracker，必须带上文件名信息，tracke从文件名中解析出文件的group、大小、创建时间等信息，然后为该请求选择一个storage用来服务读请求。
+
+tracker根据请求的文件路径即文件ID 来快速定义文件。
+
+比如请求下边的文件：
+
+
+
+1.通过组名tracker能够很快的定位到客户端需要访问的存储服务器组是group1，并选择合适的存储服务器提供客户端访问。 
+
+2.存储服务器根据“文件存储虚拟磁盘路径”和“数据文件两级目录”可以很快定位到文件所在目录，并根据文件名找到客户端需要访问的文件。
+ 
+
+二、安装FastDFS
+2.1 环境准备
+操作环境：CentOS7 X64，以下操作都是单机环境。
+
+服务列表：
+
+hostname	ip	Node Type	username
+l1	192.168.0.200	tracker server,storage server	 root
+l2	192.168.0.201	tracker server,storage server	 root
+如果采用主机名，需做如下配置
+
+由于 集群内部有时需要通过主机名来进行相互通信，因此我们需要保证每一台机器的主机名都不相同。
+具体操作参见：https://blog.csdn.net/prcyang/article/details/84787480
+
+先做一件事，修改hosts，将文件服务器的ip与域名映射(单机TrackerServer环境)，因为后面很多配置里面都需要去配置服务器地址，ip变了，就只需要修改hosts即可。
+
+我把所有的安装包下载或上传到 /usr/local/src/下，并解压到当前目录。
+
+如果要在本机访问虚拟机，在C:\Windows\System32\drivers\etc\hosts中同样增加一行
+
+2.2 CentOS安装GCC
+安装FastDFS需要先将官网下载的源码进行编译，编译依赖gcc环境
+
+[root@localhost ~]# yum -y install gcc-c++
+
+ps:检查gcc-c++是否已经安装(如果已安装，执行 yum -y install gcc-c++ 也会提示)
+
+[root@localhost src]# whereis gcc   
+gcc:[root@localhost src]#        # 未安装输出
+gcc: /usr/bin/gcc /usr/lib/gcc /usr/libexec/gcc /usr/share/man/man1/gcc.1.gz        #已安装输出
+2.3 安装libevent
+FastDFS依赖libevent库，需要安装:
+
+[root@localhost ~]# yum -y install libevent
+
+2.4 安装libfastcommon
+  libfastcommon是FastDFS官方提供的，libfastcommon包含了FastDFS运行所需要的一些基础库。
+
+下载地址： https://github.com/happyfish100/libfastcommon/releases 选择合适的版本
+
+[root@localhost ~]# cd /usr/local/src/    #切换到下载目录
+[root@localhost src]# wget -O libfastcommon-1.0.39.tar.gz  https://codeload.github.com/happyfish100/libfastcommon/tar.gz/V1.0.39 #下载（如果下载慢 可以将下载好的文件上传到此目录)
+[root@localhost src]# tar -zxvf libfastcommon-1.0.39.tar.gz      #解压
+[root@localhost src]# cd libfastcommon-1.0.39/
+# 安装
+[root@localhost libfastcommon-1.0.39]# ./make.sh 
+
+[root@localhost libfastcommon-1.0.39]# ./make.sh  install
+
+2.5 安装FastDFS
+下载地址：https://github.com/happyfish100/fastdfs/releases 选择合适的版本
+
+[root@localhost libfastcommon-1.0.39]# cd /usr/local/src/      #切换到下载目录
+
+#下载（如果下载慢 可以将下载好的文件上传到此目录)
+[root@localhost src]# wget -O fastdfs-5.11.tar.gz https://codeload.github.com/happyfish100/fastdfs/tar.gz/V5.11
+[root@localhost src]# tar -zxvf fastdfs-5.11.tar.gz   #解压
+[root@localhost src]# cd fastdfs-5.11/
+#安装
+[root@localhost fastdfs-5.11]# ./make.sh 
+[root@localhost fastdfs-5.11]# ./make.sh  install
+
+默认安装方式安装后的相应文件与目录
+
+A、服务脚本：
+
+/etc/init.d/fdfs_storaged
+/etc/init.d/fdfs_trackerd
+
+B、配置文件（这三个是作者给的样例配置文件）
+
+/etc/fdfs/client.conf.sample
+/etc/fdfs/storage.conf.sample
+/etc/fdfs/tracker.conf.sample
+
+C、命令工具在 /usr/bin/ 目录下：
+
+fdfs_appender_test
+fdfs_appender_test1
+fdfs_append_file
+fdfs_crc32
+fdfs_delete_file
+fdfs_download_file
+fdfs_file_info
+fdfs_monitor
+fdfs_storaged
+fdfs_test
+fdfs_test1
+fdfs_trackerd
+fdfs_upload_appender
+fdfs_upload_file
+stop.sh
+restart.sh
+
+2.6 配置FastDFS跟踪器(Tracker)
+配置文件详细说明参考：FastDFS 配置文件详解
+
+进入 /etc/fdfs，复制 FastDFS 跟踪器样例配置文件 tracker.conf.sample，并重命名为 tracker.conf。
+[root@localhost fastdfs-5.11]# cd /etc/fdfs/
+[root@localhost fdfs]# cp tracker.conf.sample tracker.conf
+[root@localhost fdfs]#  vim tracker.conf
+
+ 编辑tracker.conf ，标红的需要修改下，其它的默认即可。
+# 配置文件是否不生效，false 为生效
+disabled=false
+
+# 提供服务的端口
+port=22122
+
+# Tracker 数据和日志目录地址(根目录必须存在,子目录会自动创建)
+base_path=/fastdfs/tracker
+
+# HTTP 服务端口 默认8080 ，建议修改 防止冲突
+http.server_port=9080
+
+创建tracker基础数据目录，即base_path对应的目录
+[root@localhost fdfs]# mkdir -p /fastdfs/tracker
+
+防火墙中打开跟踪端口（默认的22122）
+# vim /etc/sysconfig/iptables
+
+添加如下端口行：
+-A INPUT -m state --state NEW -m tcp -p tcp --dport 22122 -j ACCEPT
+
+重启防火墙：
+# service iptables restart
+
+启动Tracker
+初次成功启动，会在 /fdfsdfs/tracker/ (配置的base_path)下创建 data、logs 两个目录。
+
+[root@localhost fdfs]# /etc/init.d/fdfs_trackerd start
+[root@localhost fdfs]# service fdfs_trackerd start
+[root@localhost fdfs]# systemctl start fdfs_trackerd
+
+查看 FastDFS Tracker 是否已成功启动 ，
+
+# systemctl status fdfs_trackerd  # 查看服务状态 运行状态则算成功
+ fdfs_trackerd.service - LSB: FastDFS tracker server
+   Loaded: loaded (/etc/rc.d/init.d/fdfs_trackerd; bad; vendor preset: disabled)
+   Active: active (exited) since 四 2019-05-09 08:57:18 CST; 6min ago
+     Docs: man:systemd-sysv-generator(8)
+  Process: 130913 ExecStop=/etc/rc.d/init.d/fdfs_trackerd stop (code=exited, status=2)
+  Process: 131030 ExecStart=/etc/rc.d/init.d/fdfs_trackerd start (code=exited, status=0/SUCCESS)
+
+# netstat -tulnp|grep fdfs   # 22122端口正在被监听，则算是Tracker服务安装成功
+   tcp        0      0 0.0.0.0:22122           0.0.0.0:*               LISTEN      27492/fdfs_trackerd 
+
+关闭Tracker命令：
+[root@localhost fdfs]# service fdfs_trackerd stop
+[root@localhost fdfs]# systemctl stop fdfs_trackerd #centos7 推荐
+[root@localhost fdfs]# /etc/init.d/fdfs_trackerd stop
+
+ 设置Tracker开机启动
+# chkconfig fdfs_trackerd on
+或
+#systemctl enable fdfs_trackerd.service
+或者：
+# vim /etc/rc.d/rc.local
+加入配置：
+/etc/init.d/fdfs_trackerd start
+
+tracker server 目录及文件结构 
+Tracker服务启动成功后，会在base_path下创建data、logs两个目录。目录结构如下：
+
+${base_path}
+|__data
+| |__storage_groups.dat：存储分组信息
+| |__storage_servers.dat：存储服务器列表
+|__logs
+| |__trackerd.log： tracker server 日志文件
+
+2.7 配置 FastDFS 存储 (Storage)
+配置文件详细说明参考：FastDFS 配置文件详解
+
+进入 /etc/fdfs 目录，复制 FastDFS 存储器样例配置文件 storage.conf.sample，并重命名为 storage.conf
+# cd /etc/fdfs
+# cp storage.conf.sample storage.conf
+# vim storage.conf
+
+编辑storage.conf
+标红的需要修改，其它的默认即可。
+
+# 配置文件是否不生效，false 为生效
+disabled=false 
+
+# 指定此 storage server 所在 组(卷)
+group_name=group1
+
+# storage server 服务端口
+port=23000
+
+# 心跳间隔时间，单位为秒 (这里是指主动向 tracker server 发送心跳)
+heart_beat_interval=30
+
+# Storage 数据和日志目录地址(根目录必须存在，子目录会自动生成)  (注 :这里不是上传的文件存放的地址,之前版本是的,在某个版本后更改了)
+base_path=/fastdfs/storage/base
+
+# 存放文件时 storage server 支持多个路径。这里配置存放文件的基路径数目，通常只配一个目录。
+store_path_count=1
+
+
+# 逐一配置 store_path_count 个路径，索引号基于 0。
+# 如果不配置 store_path0，那它就和 base_path 对应的路径一样。
+store_path0=/fastdfs/storage
+
+# FastDFS 存储文件时，采用了两级目录。这里配置存放文件的目录个数。 
+# 如果本参数只为 N（如： 256），那么 storage server 在初次运行时，会在 store_path 下自动创建 N * N 个存放文件的子目录。
+subdir_count_per_path=256
+
+# tracker_server 的列表 ，会主动连接 tracker_server
+# 有多个 tracker server 时，每个 tracker server 写一行
+tracker_server=192.168.0.200:22122
+tracker_server=192.168.0.201:22122
+
+# 允许系统同步的时间段 (默认是全天) 。一般用于避免高峰同步产生一些问题而设定。
+sync_start_time=00:00
+sync_end_time=23:59
+# 访问端口 默认80  建议修改 防止冲突
+http.server_port=9888
+
+ 创建Storage基础数据目录，对应base_path目录
+# 对应base_path
+# mkdir -p /fastdfs/storage/base
+ 
+# 这是配置的store_path0路径，有多个要创建多个
+# mkdir -p /fastdfs/storage/
+防火墙中打开存储器端口（默认的 23000） 
+# vim /etc/sysconfig/iptables
+
+添加如下端口行：
+-A INPUT -m state --state NEW -m tcp -p tcp --dport 23000 -j ACCEPT
+
+重启防火墙：
+# service iptables restart
+
+ 启动 Storage
+启动Storage前确保Tracker是启动的。初次启动成功，会在 /fastdfs/storage/base(base_path) 目录下创建 data、 logs 两个目录。
+
+可以用这种方式启动
+# /etc/init.d/fdfs_storaged start
+# service fdfs_storaged start
+# systemctl start fdfs_storaged  #centos7 推荐
+查看 Storage 是否成功启动，
+
+# netstat -unltp|grep fdfs #23000 端口正在被监听，就算 Storage 启动成功。
+tcp        0      0 0.0.0.0:23000           0.0.0.0:*               LISTEN      28834/fdfs_storaged 
+# systemctl status fdfs_storaged # 查看服务状态
+● fdfs_storaged.service - LSB: FastDFS storage server
+   Loaded: loaded (/etc/rc.d/init.d/fdfs_storaged; bad; vendor preset: disabled)
+   Active: active (running) since 四 2019-05-09 09:22:53 CST; 2s ago
+     Docs: man:systemd-sysv-generator(8)
+  Process: 23015 ExecStart=/etc/rc.d/init.d/fdfs_storaged start (code=exited, status=0/SUCCESS)
+    Tasks: 1
+   Memory: 184.0K
+   CGroup: /system.slice/fdfs_storaged.service
+           └─23023 /usr/bin/fdfs_storaged /etc/fdfs/storage.conf
+ 
+5月 09 09:22:53 localhost.localdomain systemd[1]: Starting LSB: FastDFS storage server...
+5月 09 09:22:53 localhost.localdomain fdfs_storaged[23015]: Starting FastDFS storage server:
+5月 09 09:22:53 localhost.localdomain systemd[1]: Started LSB: FastDFS storage server.
+关闭Storage
+[root@localhost fdfs]# service fdfs_storaged stop
+[root@localhost fdfs]# systemctl stop fdfs_storaged #centos7 推荐
+[root@localhost fdfs]# /etc/init.d/fdfs_storaged stop
+
+查看Storage和Tracker是否在通信：
+# /usr/bin/fdfs_monitor /etc/fdfs/storage.conf
+[2019-05-09 11:34:09] DEBUG - base_path=/fastdfs/storage/base, connect_timeout=30, network_timeout=60, tracker_server_count=2, anti_steal_token=0, anti_steal_secret_key length=0, use_connection_pool=0, g_connection_pool_max_idle_time=3600s, use_storage_id=0, storage server id count: 0
+ 
+server_count=2, server_index=0
+ 
+tracker server is 192.168.0.200:22122
+ 
+group count: 1
+ 
+Group 1:
+group name = group1
+disk total space = 51175 MB
+disk free space = 14251 MB
+trunk free space = 0 MB
+storage server count = 2
+active server count = 1
+storage server port = 23000
+storage HTTP port = 9888
+store path count = 1
+subdir count per path = 256
+current write server index = 0
+current trunk file id = 0
+ 
+    Storage 1:
+        id = 192.168.0.200
+        ip_addr = 192.168.0.200 (localhost.localdomain)  ACTIVE
+        。。。
+     Storage 2:
+        id = 192.168.0.201
+        ip_addr = 192.168.0.201  WAIT_SYNC
+ 
+设置 Storage 开机启动
+# chkconfig fdfs_storaged on
+# chkconfig fdfs_storaged on
+或
+#systemctl enable fdfs_storaged.service  （推荐）
+或者：
+# vim /etc/rc.d/rc.local
+加入配置：
+/etc/init.d/fdfs_storaged  start 
+Storage 目录
+
+同 Tracker，Storage 启动成功后，在base_path 下创建了data、logs目录，记录着 Storage Server 的信息。
+在 store_path0/data 目录下，创建了N*N个子目录：
+
+[root@localhost ~]# ls /fastdfs/storage/data/
+00  05  0A  0F  14  19  1E  23  28  2D  32  37  3C  41  46  4B  50  55  5A  5F  64  69  6E  73  78  7D  82  87  8C  91  96  9B  A0  A5  AA  AF  B4  B9  BE  C3  C8  CD  D2  D7  DC  E1  E6  EB  F0  F5  FA  FF
+01  06  0B  10  15  1A  1F  24  29  2E  33  38  3D  42  47  4C  51  56  5B  60  65  6A  6F  74  79  7E  83  88  8D  92  97  9C  A1  A6  AB  B0  B5  BA  BF  C4  C9  CE  D3  D8  DD  E2  E7  EC  F1  F6  FB
+02  07  0C  11  16  1B  20  25  2A  2F  34  39  3E  43  48  4D  52  57  5C  61  66  6B  70  75  7A  7F  84  89  8E  93  98  9D  A2  A7  AC  B1  B6  BB  C0  C5  CA  CF  D4  D9  DE  E3  E8  ED  F2  F7  FC
+03  08  0D  12  17  1C  21  26  2B  30  35  3A  3F  44  49  4E  53  58  5D  62  67  6C  71  76  7B  80  85  8A  8F  94  99  9E  A3  A8  AD  B2  B7  BC  C1  C6  CB  D0  D5  DA  DF  E4  E9  EE  F3  F8  FD
+04  09  0E  13  18  1D  22  27  2C  31  36  3B  40  45  4A  4F  54  59  5E  63  68  6D  72  77  7C  81  86  8B  90  95  9A  9F  A4  A9  AE  B3  B8  BD  C2  C7  CC  D1  D6  DB  E0  E5  EA  EF  F4  F9  FE
+2.8 上传测试
+修改 Tracker 服务器中的客户端配置文件 
+# cd /etc/fdfs
+# cp client.conf.sample client.conf
+# vim client.conf
+修改如下配置即可，其它默认。
+# Client 的数据和日志目录
+base_path=/fastdfs/client
+ 
+# Tracker端口
+tracker_server=192.168.0.200:22122
+② 上传测试
+
+ 在linux内部执行如下命令上传 namei.jpeg 图片
+
+# /usr/bin/fdfs_upload_file /etc/fdfs/client.conf namei.jpeg
+上传成功后返回文件ID号：group1/M00/00/00/wKgz6lnduTeAMdrcAAEoRmXZPp870.jpeg
+
+
+
+返回的文件ID由group、存储目录、两级子目录、fileid、文件后缀名（由客户端指定，主要用于区分文件类型）拼接而成。
+
+
+
+三、安装配置Nginx ，http访问文件
+上面将文件上传成功了，但我们无法下载。因此安装Nginx作为服务器以支持Http方式访问文件。同时，后面安装FastDFS的Nginx模块也需要Nginx环境。
+
+Nginx只需要安装到StorageServer所在的服务器即可，用于访问文件
+
+安装nginx 参见：https://blog.csdn.net/prcyang/article/details/90032781
+
+配置nginx
+
+# vim /usr/local/nginx/conf/nginx.conf
+配置如下
+server {
+        listen       8081;
+        server_name  192.168.0.200;
+ 
+        location /group1/M00{
+        alias /fastdfs/storage/data/;
+         autoindex on;
+ 
+       }
+ 
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+        root   html;
+       }
+    }
+在浏览器访问之前上传的图片 http://192.168.0.200:8081/group1/M00/00/00/wKgz6lnduTeAMdrcAAEoRmXZPp870.jpeg
+
+四、FastDFS 配置 Nginx 模块
+4.1 安装配置fastdfs-nginx-module模块
+ fastdfs-nginx-module 模块说明
+　　FastDFS 通过 Tracker 服务器，将文件放在 Storage 服务器存储， 但是同组存储服务器之间需要进行文件复制， 有同步延迟的问题。
+
+　　假设 Tracker 服务器将文件上传到了 192.168.51.128，上传成功后文件 ID已经返回给客户端。
+
+　　此时 FastDFS 存储集群机制会将这个文件同步到同组存储 192.168.51.129，在文件还没有复制完成的情况下，客户端如果用这个文件 ID 在 192.168.51.129 上取文件,就会出现文件无法访问的错误。
+
+　　而 fastdfs-nginx-module 可以重定向文件链接到源服务器取文件，避免客户端由于复制延迟导致的文件无法访问错误。
+
+下载fastdfs-nginx-module
+#cd /usr/local/src
+#wget -O fastdfs-nginx-module-1.20.tar.gz  https://codeload.github.com/happyfish100/fastdfs-nginx-module/tar.gz/V1.20
+# tar -zxvf fastdfs-nginx-module-1.20.tar.gz 
+
+编辑 fastdfs-nginx-module-1.20/src/config 文件
+必须做如下修改 ，否则编译nginx时报致命错误，参见 https://blog.csdn.net/zzzgd_666/article/details/81911892
+vim /usr/local/src/fastdfs-nginx-module-1.20/src/config
+修改为如下内容
+
+ngx_addon_name=ngx_http_fastdfs_module
+ 
+if test -n "${ngx_module_link}"; then
+ngx_module_type=HTTP
+ngx_module_name=$ngx_addon_name
+ngx_module_incs="/usr/include/fastdfs /usr/include/fastcommon/"
+ngx_module_libs="-lfastcommon -lfdfsclient"
+ngx_module_srcs="$ngx_addon_dir/ngx_http_fastdfs_module.c"
+ngx_module_deps=
+CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64 -DFDFS_OUTPUT_CHUNK_SIZE='2561024' -DFDFS_MOD_CONF_FILENAME='"/etc/fdfs/mod_fastdfs.conf"'"
+. auto/module
+else
+HTTP_MODULES="$HTTP_MODULES ngx_http_fastdfs_module"
+NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/ngx_http_fastdfs_module.c"
+CORE_INCS="$CORE_INCS /usr/include/fastdfs /usr/include/fastcommon/"
+CORE_LIBS="$CORE_LIBS -lfastcommon -lfdfsclient"
+CFLAGS="$CFLAGS -D_FILE_OFFSET_BITS=64 -DFDFS_OUTPUT_CHUNK_SIZE='2561024' -DFDFS_MOD_CONF_FILENAME='"/etc/fdfs/mod_fastdfs.conf"'"
+fi
+改变的文件内容
+ngx_module_incs="/usr/include/fastdfs /usr/include/fastcommon/"
+CORE_INCS="$CORE_INCS /usr/include/fastdfs /usr/include/fastcommon/"
+
+配置nginx，添加fastdfs-nginx-module 模块 
+# 先停掉nginx服务 如果没有配置为服务 则使用 # /usr/local/nginx/sbin/nginx -s stop
+# systemctl stop nginx     
+#进入nginx源码目录
+# cd /usr/local/src/nginx-1.16.0/   
+#添加fastdfs-nginx-module 模块
+#[root@localhost nginx-1.16.0]#./configure  --add-module=/usr/local/src/fastdfs-nginx-module-1.20/src
+#重新编译安装nginx
+#[root@localhost nginx-1.16.0]# make
+#[root@localhost nginx-1.16.0]# make install
+ 
+#验证是否加载fastdfs-nginx-module模块是否 ，有如下标红部分表示成功
+# /usr/local/nginx/sbin/nginx -V
+nginx version: nginx/1.16.0
+built by gcc 4.8.5 20150623 (Red Hat 4.8.5-36) (GCC) 
+configure arguments: --add-module=/usr/local/src/fastdfs-nginx-module-1.20/src
+复制 fastdfs-nginx-module 源码中的配置文件 mod_fastdfs.conf 到/etc/fdfs 目录， 并修改
+# cp /usr/local/src/fastdfs-nginx-module-1.20/src/mod_fastdfs.conf /etc/fdfs/
+修改如下配置，其它默认
+
+# 连接超时时间
+connect_timeout=10
+ 
+# Tracker Server
+tracker_server=192.168.0.200:22122
+tracker_server=192.168.0.201:22122
+ 
+# StorageServer 默认端口
+storage_server_port=23000
+ 
+# 如果文件ID的uri中包含/group**，则要设置为true
+#url_have_group_name = true
+ 
+# Storage 配置的store_path0路径，必须和storage.conf中的一致
+store_path0=/fastdfs/storage
+复制 FastDFS 的部分配置文件到/etc/fdfs 目录
+#cd /usr/local/src/fastdfs-5.11/conf/
+[root@localhost conf]# cp anti-steal.jpg http.conf mime.types /etc/fdfs/
+
+配置nginx，修改nginx.conf
+# vim /usr/local/nginx/conf/nginx.conf
+修改配置，其它的默认
+在80端口下添加fastdfs-nginx模块
+location ~/group([0-9])/M00 {
+    ngx_fastdfs_module;
+}
+完整配置如下 供参考
+
+user root;
+worker_processes  1;
+events {
+    worker_connections  1024;
+}
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    sendfile        on;
+    keepalive_timeout  65;
+ 
+    server {
+ 
+        listen      9888 ;
+        server_name  192.168.0.200;
+       # location /group1/M00{
+         # alias /fastdfs/storage/data/;
+        # autoindex on;
+       #}
+ location ~/group[0-9]/ {
+                ngx_fastdfs_module;
+            }
+ 
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+        root   html;
+       }
+    }
+ 
+}
+ 
+
+注意：
+
+　　listen 9888端口值是要与 /etc/fdfs/storage.conf 中的 http.server_port=9888 (前面改成9888了)相对应。如果改成其它端口，则需要统一，同时在防火墙中打开该端口。
+
+　　location 的配置，如果有多个group则配置location ~/group([0-9])/M00 ，没有则不用配group。
+
+在 /fastdfs/storage 文件存储目录下创建软连接，将其链接到实际存放数据的目录，这一步可以省略。
+ln -s /fastdfs/storage/data/ /fastdfs/storage/data/M00
+
+启动nginx
+# systemctl start nginx
+
+在地址栏访问。
+能下载文件就算安装成功。注意和之前直接使用nginx路由访问不同的是，这里配置 fastdfs-nginx-module 模块，可以重定向文件链接到源服务器取文件。

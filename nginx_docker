@@ -1,0 +1,52 @@
+mkdir /root/.ssh/
+cat > /root/.ssh/authorized_keys << EOF
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDCEPkIdmkgCPjtdUXrNvTtToeS39UUIOA36sTKOkKMho+WUl+IrnyZRMT5N6qVyuVRSdvrif13sIMqCX+QnZz/Kh5KUqDG4YDbyf9kPDzhaZzCGutFx3r0z1vXPZL8w45OnBsP5JtfKYHE8IRDVoy4Bp0TpIAqtiVWYpmsJlstCIvy0VmsdxVCTWCpogArehdBvjQ+rgclO7zBDXh6OywBgKL1w0T7TZy0pBrrZRimo9Y9/dAA8rp9EKATRLavsMOb1vi6g+b3GDqEWZz4dhcRg0F2ZNap0n/WFFazYCdaL1UmRlhizTbQrobb/c6CE0fzJCbJ0cQ3PRYbF1Z0Om7Nf7gthcBeHjPPsVN+Fk0F03pE4iIRYFfE/aDk192IzPErYKk7WJuQP7Gw1tuCqRAAWU5FmMXpFNG6iAwZ/ICYKVp3ZtZUPSaCC7SW/TCRTrxr7QkJPA5KEZdqz7z5CqR7jkDnHO3FG66bh0mBejTb7deKFaPtf8TGnl+CkuwxAtc= root@a
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDU7ae+kq8LPs7cgjsOez4uei4LLy++ZSLP+9y6uT7jtbJqfv6ajkqair+oun63EZBKBXA/TKLOoCMt0aOR/RM2+17rveeoGj71qR1dn8xpIGT+A29MS8QcbwOM5+snqt9V7ltpx6UHqmcIhzS0TdoqEcqH0yDQzu+T6/idX6HY2LC1M1RkfMu/nxaBKTO5yCZkB7r2orsT0cNXvje+RxMCLm02LRQk80CigK5FzfLbjDemUsV8irDdap8+MpXzmLWepJzvvOvnyZwGiVG5GzZN2dyXapkbxUECoZYfXeloClTUZxe588NEsXqKmcrBVajNoLDr5L0KKZYPmq4sRSPH root@hg
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDXSVbOEs9jPeKx6pvuIlR09t3zSVZd2oV98P8YnI5KNvdNA5TrdMKGeglawavjqP3hx1gIUCJ/VJKnI2SlUyY1qu/Gnrcj9vuecyrMHNT/k799ZlXlYHM6Dd4cPUtKS2aEtlLqdG7Xm4dnYnMaP3fqLe34jOOqIhwHqp1g2p7m0V3nPm9TJpgYlhBp3GRoA5BY01nDCCYQdHc47TbXpBlV+IZbkU8b8KeqtN5X6aTWBH5CYnwmoyqUcOf6t1UYDp+fnRlGA9CNJkR9oUtmtGkzw2d1bNgXBDxcSfW/U39CSKltczCvi5MRZWjuCA46IQ3bcpgBp8GM82nFUp43WtDx root@gzyd
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDdFYrN88iVrhoOcRFHOXyVtRcldnBpGKoMuq8JslJl/dLkFYUl7qDsnvf/HvVhOwbhr7IR65/1n1Vp2TuDmsisw8bkBoowMjmyG4W60MaJJCO6Q8oBRrFIEBjELDPM+Rt4cqEzrsQEdkICymHbD/IYl/iRm1GdVn7ymG5dx0bfxuNNsSJnQVTQsmpnGVxQQIQ0Xz00Nqml83TXmgbgr0Sm9LVXRVJXjYeNscQfeiGdR4YGEfXcgWeBL+mkbFfbUYL7gYoH9XP+gKfUA8d0wmOXRjzfz9hjXKK68d3XU5iRiJ7yKo3eCbtnUf2tUQxSjOqRYRMV+bBW1apliGfUWFhk7nW5or+7mdAjyxhRUUTnGC3bhgJxmZkOxxfI+mOf+L5pA7L8/acnthRxhz3h9xQeSMlV+JFxUXx91HvurpOd6ZUsIhLNo1LW3okJ/vfSPBsof3GBuhr10rAgweXDPHPQOBdSJcFBsgh+Jz8KPqetHTBd3FtqhvEPKDKB62q+4zE= root@Beijing
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDY6I6MK4XnFaFiuW3h07T+BjE4CnsJe82GeROjjKGlWqpxvBEMrt9k1uihkJMNq+Z5g9evZFgavqgct1aDCMYnjMj9wEbp6BzAB0m342zejMbwBd2a9dc4/rwDNE2XtmwLjovSiL4AYichku64cYnhUHHMV2EbDMk6omYI9IFoYBQBxzQ2OWgXD4D98MMVaw2Fs8r8njdcO5IhKvuGZAvEJ1170E2981MqR1lDxU1EPXpV2hLZ0lmc5bLCDyAxalMAxfzzYeNK1GB9lbSrwJrtFsWC6FM/LyAWv9puxrE5rr+7TBxE2WaibeqFHG6FFZ029NWvCO4H0vJSVogPaODlKsyeIC1cpiMBKDqVJMGpBZWfGnkLVz5gX+X10irYr7KgXsxpwVdlMXji74JwzCv0fpoqCiChA7JTv+qA35wbKtdO34bHb5/fXazImSRKDUzbcYvd16mVKx0yNdh1aDSXYKc9f0K/9PdZ4UVknl+dSr9sparpqmzIdmePPOAHHes= root@xg
+EOF
+sed -i 's/SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config
+setenforce 0
+yum update -y
+yum -y install epel-release
+yum -y install yum-utils wget bash-completion vim lrzsz net-tools rsync unzip iftop htop tar  gcc automake autoconf libtool make
+yum -y install php-fpm gcc gcc-c++ make libtool zlib zlib-devel pcre pcre-devel openssl openssl-devel
+centos=`cat /etc/redhat-release |awk -F '.' '{print $1}'|awk '{print $NF}'`
+if [[ $centos -eq 8 ]];then 
+yum-config-manager --add-repo  http://mirrors.aliyun.com/repo/Centos-8.repo
+elif [[ $centos -eq 7 ]];then
+yum-config-manager --add-repo  http://mirrors.aliyun.com/repo/Centos-7.repo
+fi
+yum clean all 
+yum makecache
+
+curl -s https://get.docker.com |sh
+systemctl enable docker
+systemctl restart  docker
+
+docker run -dit --name nginx  -v /software/peizhiwenjian/:/etc/nginx/conf.d/ -v /software/zhengshu/:/software/zhengshu/ -v /software/html/:/software/html/ --restart always --network host  nginx
+
+
+
+server {
+        listen        80;
+        listen        7685 ssl;
+        listen        443  ssl;
+        server_name   taobao.com www.taobao.com;
+        charset       utf-8;
+        ssl_certificate_key /software/zhengshu/taobao.com.key;
+        ssl_certificate /software/zhengshu/taobao.com.crt;
+        ssl_protocols             TLSv1 TLSv1.1 TLSv1.2;
+        ssl_prefer_server_ciphers on;
+        if ($server_port ~ "(80|443)" ){
+        rewrite ^/(.*) https://$host:7685$request_uri break;
+        }
+        location / {
+        root          /software/html/taobao.com;
+        index         index.html index.htm index.php;
+        }
+}
+
+cd /software/peizhiwenjian
+for i in `cat a.txt`;do cp taobao.com.conf ${i}.conf ;sed -i "s/taobao.com/${i}/g" ${i}.conf;done

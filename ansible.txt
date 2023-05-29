@@ -1,0 +1,399 @@
+### 命令行传递变量
+ansible-playbook main.yml --extra-vars "version=1.23.45 other_variable=foo"
+--extra-vars '{"pacman":"mrs","ghosts":["inky","pinky","clyde","sue"]}'     #传递json变量
+--extra-vars "@some_file.json"                                              #传递json文件
+
+### 指定主机
+anilble-playbook -i 192.168.1.11, main.yml
+# file test.yml
+- hosts: all
+  serial: 5                                            #并发执行  设置为1表示滚动更新
+  gather_facts: yes                                    #系统信息采集
+  environment:                                         #shell脚本环境变量
+    http_proxy: http://192.168.66.33
+  sudo: yes
+  tasks:
+    - import_tasks: test2.yml                          #会先加载test.yml里的变量同时再加载test2.yml里的变量
+      when: ansible_os_family == "RedHat"
+    - include_tasks: test3.yml                         #先执行完test.yml 里面的tasks 再加载test2.yml里g面的变量
+      when: ansible_os_family == "BlackHat"               
+    - include_tasks:
+        file: test2.yml
+        apply:
+            tags: H1
+      tags: always    #这里必须指定always，因为test.yml执行前提是，include_tasks执行
+  handlers: 
+          - import_tasks: handlers.yml
+# ansible-playbook -i 192.168.73.128, test.yml --tags="H1"
+# file test2.yml 
+- set_fact: ansible_os_family="BlackHat"                #同一主机组中play相互引用，但是vars定义的变量，只能在单独的play使用
+# file test3.yml
+- name: exec shell
+  shell:  
+    cmd: echo "{{ ansible_os_family }}" > a.sh        #test2.yml设置为黑色所以这输出是黑色
+	chdir: /root/test/
+  notify:
+          - testdebug
+# file handlers.yml
+- name: testdebug
+  debug:
+        msg: "{{ansible_os_family}}"
+        
+#注册变量
+- hosts: web_servers
+  tasks:
+     - shell: /usr/bin/foo
+       register: foo_result
+       ignore_errors: True     #忽略错误
+
+     - shell: /usr/bin/bar
+       when: foo_result.rc == 5
+
+
+# 变量文件分割，条件导入
+  vars_files:
+    - "vars/common.yml"
+    - [ "vars/{{ ansible_os_family }}.yml", "vars/os_defaults.yml" ]   #如果没有系统yml则使用默认的
+## 条件选择 when
+- name: exec shell
+  shell: /usr/bin/bash /a.sh
+  ignore_errors: yes
+  register: result                                #注册变量result
+- debug:
+        var: result                               #输出信息
+- shell: echo 'okokok' >> /a.sh
+  when: result.rc == 0                            #变量引用
+- fail:                                           #结束运行脚本
+        msg: " 出现错误了，结束运行脚本"
+  when: result.rc != 0
+- shell: echo "{{ aaa }}" >> /a.sh
+  when: aaa is defined                            #当有这个变量
+- shell: cat /a.txt
+        register: motd_contents
+- shell: echo "motd contains the word hi"
+        when: motd_contents.stdout.find('hi') != -1       #当注册变量包含
+#在roles 和 includes 上面应用’when’语句
+- hosts: webservers
+  roles:
+     - { role: debian_stock_config, when: ansible_os_family == 'Debian' }
+- include: tasks/sometasks.yml
+  when: "'reticulating splines' in output"
+##循环
+#标准循环 
+with_items:                                                  
+     - testuser1
+     - testuser2
+with_items:
+    - { name: 'testuser1', groups: 'wheel' }
+    - { name: 'testuser2', groups: 'root' }
+#嵌套循环（各种格式都匹配，12种）
+command: "echo name={{ item[0] }} priv={{ item[1] }} test={{ item[2] }}"
+with_nested:                                        
+        - [ 'alice', 'bob' ]
+        - [ 'clientdb', 'employeedb', 'providerdb' ]
+        - [ '1', '2', ]
+#字典循环
+users:
+  alice:
+    name: Alice Appleworth
+    telephone: 123-456-7890
+  bob:
+    name: Bob Bananarama
+    telephone: 987-654-3210
+debug: msg="User {{ item.key }} is {{ item.value.name }} ({{ item.value.telephone }})"
+with_dict: "{{ users }}"					
+
+#with_file     是将每个文件的文件内容作为item的值
+#with_fileglob 是将每个文件的全路径作为item的值
+#同步循环 结果（14 25 4none）
+- command: echo "msg={{ item.0 }} and {{ item.1 }}"
+  with_together:						     
+        - [ 1, 2, 3 ]
+        - [ 4, 5 ]
+
+#对子元素使用循环
+users:
+          alice:
+                  name: Alice Appleworth
+                  telephone: [123-456-7891,123-123-1232]
+          bob:
+                  name: Bob Bananarama
+                  telephone: [123-456-7893,123-123-1234]   
+tasks:
+        - debug: 
+             msg:  ==== {{ item.0.name }}  {{ item.1 }}===
+          with_subelements:                                       
+                   - "{{users}}"
+                   - telephone 
+#第一个匹配到的文件
+template: src={{ item }} dest=/etc/file.cfg mode=0444 owner=root group=root
+with_first_found:                                            
+    - files:
+       - "{{ inventory_hostname }}/etc/file.cfg"
+      paths:
+       - ../../../templates.overwrites
+       - ../../../templates
+#循环一个执行结果(with_lines)
+shell: touch /$HOME/{{ item }}
+with_lines: /usr/bin/cat  /test/a.txt
+#ini 文件循环(with_ini)
+[section1]
+value1=section1/value1
+value2=section1/value2
+[section2]
+value1=section2/value1
+value2=section2/value2
+- debug: msg="{{ item }}"
+  with_ini: value[1-2] section=section1 file=lookup.ini re=true
+#扁平化循环flatten循环（所有的元素）
+shell:  echo {{ item }}
+with_flattened: 
+    - [1, 2, 3]
+    - [[3,4 ]]
+    - [ ['red-package'], ['blue-package']]
+#register 注册变量循环
+- shell: /usr/bin/something
+  register: command_result
+
+- shell: /usr/bin/something_else --param {{ item }}
+  with_items: "{{command_result.stdout_lines}}"
+变量echo是一个字典, 字典中result是一个list, list中包含了每一个item的执行结果
+#主机循环
+- debug: msg={{ item }}
+  with_inventory_hostnames: all
+#使用索引循环列表
+- name: indexed loop demo
+  debug: msg="at array position {{ item.0 }} there is a value {{ item.1 }}"
+  with_indexed_items: "{{some_list}}"
+#随机选择
+- debug: msg={{ item }}
+  with_random_choice:
+     - "go through the door"
+     - "drink from the goblet"
+
+
+
+
+###### Vault 加密
+ansible-vault encrypt foo.yml bar.yml baz.yml   #加密普通文件
+ansible-vault encrypt_string vaule --name key   #加密变量值
+ansible-vault decrypt foo.yml bar.yml baz.yml   #解密已加密文件
+
+ansible-vault create foo.yml                    #创建加密文件
+ansible-vault view foo.yml bar.yml baz.yml      #查阅已加密文件
+ansible-vault edit foo.yml                      #编辑加密文件
+ansible-vault rekey foo.yml bar.yml baz.yml     #密钥更新加密文件
+
+#在Vault下运行Playbook
+ansible-playbook main.yml --ask-vault-pass     
+ansible-playbook main.yml --vault-password-file ~/.vault_pass.txt  
+ansible-playbook main.yml --vault-id ~/.vault_pass.txt
+
+
+###
+.
+├── main.yml
+└── roles
+    ├── appserver
+    │   ├── defaults
+    │   │   └── main.yml
+    │   ├── files
+    │   ├── handlers
+    │   ├── meta
+    │   │   └── main.yml
+    │   ├── tasks
+    │   │   └── main.yml
+    │   ├── templates
+    │   └── vars
+    └── webserver
+        ├── defaults
+        │   └── main.yml
+        ├── files
+        ├── handlers
+        ├── meta
+        │   └── main.yml
+        ├── tasks
+        │   └── main.yml
+        ├── templates
+        └── vars
+            └── main.yml
+            
+- file:        #创建目录
+    path: "{{test}}/{{test}}/"
+    state: directory
+    mode: 0755
+	group: nginx
+	owner: nginx
+- file:         #软链接
+    src: "  "
+    dest: "  "
+    state: link
+- get_url:   #下载文件                  
+    url: " "
+    dest: " "
+    force: yes
+- unarchive:   #下载并解压
+    src: "  "
+    dest: " "
+    remote_src: yes
+- copy:        #远程主机的目录拷贝
+    src: "  "
+    dest: "  "
+    remote_src: yes
+
+- template:        #拷贝模板
+    src: "  " 
+    dest: "  "
+  ignore_errors: yes
+- supervisorctl:   #supervisor 重启
+    name: "{{name}}"
+    state: restarted
+    
+
+#文件新增
+- blockinfile:
+        path: "{{ net_config }}"
+        block: |
+          DNS1=1.1.1.1
+          DNS2=2.2.2.2
+        marker: "#{mark}  mysql dns  config"
+        state: present
+#文件行
+- lineinfile:
+    path: "{{ net_config }}"
+    regexp: '^DNS[0-9]'         
+    state: absent            #删除行
+- lineinfile:
+    path: /etc/selinux/config
+    regexp: '^SELINUX='
+    insertafter: '<body>'     #匹配到多个改变<body>之后的        
+    line: SELINUX=disabled    #改变行
+- lineinfile:
+    path: /etc/hosts
+    search_string: '127.0.0.1'
+    line: 127.0.0.1 localhost
+#文件内容替换	
+- replace:
+    path: "{{app_base_dir}}/hall.json"
+    regexp: 'hall_test_01'
+    replace: '{{ hall_server_id }}'
+  when: cfg_update == "yes"
+- supervisorctl:
+    name: "{{ app_repo_name }}"
+    state: stopped /started
+	
+====================================================================================================================================
+==================================================================================================================================== 
+    
+    
+yum install python-pip && pip install ansible && touch /etc/ansible/hosts && touch /etc/ansible.cfg
+---------------------------------------
+cat /etc/ansible/hosts
+[test]
+192.168.1.10
+---------------------------------------
+ansible -k密码，-i主机路径，-m执行模块名字，-u远程用户，-a命令参数
+---------------------------------------
+ansible test -m ping
+ansible test -m shell -a "chdir=/xue/ sed -i 's/l/b/g' a.txt " 		#切换到/xue执行sed
+ansible test -a "/bin/bash -c 'cp /test/*.txt /test/tttt/'"		#需要正则表达式加/bin/bash
+ansible test -m shell -a "removes=/xue/b.txt  ls"					#如果b.txt存在执行ls
+ansible test -m copy -a 'src=/hello dest=/xue/hello backup=yes'		#copy文件，有源文件自动备份
+ansible test -m copy -a 'content="okay" dest=/xue/test.txt mode=666'#写入文件
+ansible test -m fetch -a 'src=/data/hello dest=/data'				#copy远到近
+ansible test -m file -a 'path=/data/app state=directory'			#创建目录
+ansible test -m file -a 'path=/data/bbb.jpg src=aaa.jpg state=link'	#创建链接文件
+ansible test -m file -a 'path=/data/a state=absent'					#删除文件
+ansible test -m file -a 'path=/xue/c.txt state=touch'				#创建文件
+ansible test -m cron -a 'name="bp" hour=*/1 job="/usr/bin/cp a.txt a.bak &> /dev/null"'		#任务计划
+ansible test -m cron -a 'name="bp" hour=*/1 job="/usr/bin/cp a.txt a.bak &> /dev/null "state=absent' #取消任务计划
+ansible test -m yum -a 'name=httpd state=present' 					#latest 安装,absent 卸载
+ansible test -m service -a 'name=nginx state=started enabled=true'	#enabled开机启动started，stopped，restarted，reloaded
+ansible test -m script -a "/tmp/kel.sh >/tmp/kelkel.log"            #执行脚本
+ansible all -m synchronize -a 'src=/test/a/ dest=/test/b/ delete=yes'    #rsync
+---------------------------yaml------------
+    # ansible-playbook a.yml --syntax-check    #检查yaml文件的语法是否正确
+    # ansible-playbook a.yml --list-task       #检查tasks任务
+    # ansible-playbook a.yml --list-hosts      #检查生效的主机
+    # ansible-playbook a.yml --start-at-task='Copy Nginx.conf'     #指定从某个task开始运行
+---------------------------yaml------------
+---
+- hosts: test
+  remote_user: root
+  vars:
+    - var1: var111
+  tasks:
+   - name:  start-firewalld
+     tags:                                          # 只执行这个标签上面的任务
+      - only                                        # ansible-playbook test.yml --tags="only" 
+     shell: systemctl start firewalld
+     ignore_errors: True                            #忽略错误，强制返回成功
+     notify:										#调用han1
+       - han1
+     when: 											#判断当下面符合执行任务
+       - ansible_distribution == "CentOS"
+       - ansible_distribution_major_version == "7"
+   
+   - name:  stop-firewalld
+     service: name=firewalld state=stopped
+     notify:                                        #调用han2
+       - han2
+-----------------------------------------------------------------------------------------------       
+   - name: 执行证书更新       
+     shell: sh /zhengshu/zhengshushenqing.sh
+     register: shell_status                        #tag1 注册变量
+
+   - name: 带入值
+     shell: echo "{{ shell_status.stdout }}" >> /a.txt  #tag1 获取变量字符串方式
+   - name: debug                                    #tag1 debug调试模块
+     debug:                                         #tag1 变量以行的方式输出shell信息   
+        var: shell_status.stdout_lines              #区别 简单
+        msg: '{{ shell_status.stdout_lines }}'      #区别 可以加字符串 格式“‘{{}}’ aaaaa”
+
+ ---------------------------------------------------------------------------------------------
+   - name: diedai                                   #迭代item里面的内容
+     copy: src=/xue/{{ item }} dest=/xue/xue/
+     with_items:
+       - a 
+       - b
+   - name: diedai2
+     copy: src=/xue/{{ item.name }} dest=/xue/xue/{{ item.arg }}
+     with_items:
+       - { name='a',arg="test1"}
+       - { name='b',arg="test2"
+  handlers:            #搭配notify被调用
+    - name : 同步文件
+      synchronize :
+      src  : /software
+      dest : /
+      delete : yes
+      #rsync_timeout : 10
+- name: han1
+      shell:  echo {{var1}} >> /xue/a.txt && sed -i 's/1/2/g' /xue/a.txt
+- name: han2
+      copy: content="{{ansible_all_ipv4_addresses}}" dest="/xue/ip.txt"
+---------------------------templates------------
+# 拷贝文件的时候自动带入值
+vim /etc/ansible/hosts 
+[test]
+192.168.116.200 http_port=80 server_name=www.jd.com  #在主机定义变量
+-----------
+cat test.conf
+{{ http_port }} {{ server_name }}  #本地文件里面定义变量名
+-----------
+- hosts: test
+  remote_user: root
+  tasks:
+    - name: cp
+      template: src=/xue/test.conf dest=/xue/nginx.conf 
+      delegate_to: 10.3.230.111
+-----------
+cat nginx.conf
+80  www.jd.com
+---------------------------yaml-------
+
+ Ansible 的任务委派功能（delegate_to）。使用 delegate_to 关键字可以委派任务到指定的机器上运行。在 playbook 的操作如下：
+
+    - name: cp
+      template: src=/xue/test.conf dest=/xue/nginx.conf 
+      delegate_to: 10.3.230.111

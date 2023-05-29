@@ -1,0 +1,75 @@
+
+#白名单
+cat whitelist.conf
+192.168.1.1 1;
+192.168.1.2 1;
+
+#cat nginx.conf
+http{
+
+    # 1.云盾/腾讯ECDN: x_real_ip不为空,将x_real_ip的值赋给$yundun,否则设为空
+    map $http_x_real_ip $yundun {
+         default "";
+         ~.+ $http_x_real_ip;
+    }
+
+    # 2.incapsula: Incap-Client-IP不为空,将Incap-Client-IP的值赋给$incap,否则赋值为$yundun
+    map $http_incap_client_ip $incap {
+        default $yundun;
+        ~.+ $http_incap_client_ip;
+    }
+
+    # 3.阿里云 ali_cdn_real_ip不为空,将ali_cdn_real_ip赋值给$aliyun,否则赋值为$vs
+    map $http_ali_cdn_real_ip $aliyun {
+        default $incap;
+        ~.+ $http_ali_cdn_real_ip;
+    }
+
+    # 4.华为CDN Cdn-Src-Ip不为空，将 Cdn-Src-Ip 赋值给$hwccdn,否则赋值为$aliyun
+    map $http_cdn_src_ip $hwccdn {
+        default $aliyun;
+        ~.+ $http_cdn_src_ip;
+    }
+
+    # 5.华为WAF X-Hwwaf-Client-IP 不为空，将 X-Hwwaf-Client-IP 赋值给$hwcwaf,否则赋值为$hwccdn
+    map $http_x_hwwaf_client_ip $hwcwaf {
+        default $hwccdn;
+        ~.+ $http_x_hwwaf_client_ip;
+    }
+
+    # 三个厂商的头都没有,说明没经过CDN,将client_real_ip设置为remote_addr
+    map $hwcwaf $client_real_ip {
+        default $remote_addr;
+        ~.+ $hwcwaf;
+    }
+
+#获取到客户IP后在白名单查询		
+	geo $client_real_ip $whitelist {      #如果$remote_addr为debug，$foo就是1
+	default 0;
+	include whitelist.conf
+	}
+	server {
+	location / {
+		default_type application/json;
+		if ($whitelist = 1) {
+			#return 200 "$remote_addr 在白名单";
+			break;
+			}
+			return 403;
+		proxy_set_header Host      $host;
+		proxy_set_header X-Real-IP $client_real_ip;
+		proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+			   }
+		  }
+}
+
+
+
+nginx禁止ip登陆，添加一个server就ok了
+    server {
+        listen 80 default;
+        server_name _;
+        return 403;
+
+    }
+

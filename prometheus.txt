@@ -1,0 +1,441 @@
+# prothemeus + grafana + alertmanager + socket接收告警
+
+### 一.安装prothemeus（注意修改alerting 告警服务器ip）
+docker run -dit --name prometheus -p9090:9090 --restart always  prom/prometheus 
+cat > prometheus.yml   << EOF
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+scrape_configs:
+- job_name: prometheus
+  honor_timestamps: true
+  scrape_interval: 5s
+  scrape_timeout: 3s
+  metrics_path: /metrics
+  scheme: http
+  static_configs:
+  - targets:
+    - localhost:9090
+
+- job_name: "运维服务器"
+  static_configs:
+      - targets: ['192.168.73.128:9100']
+      - targets: ['192.168.73.129:9100']
+
+- job_name: "基于文件"
+    file_sd_configs:
+    - refresh_interval: 1m
+      files:
+      - "/usr/local/prometheus/prometheus/conf/node*.yml"
+
+- job_name: "基于consul service"
+  metrics_path: /
+  consul_sd_configs:
+    - server: 192.168.73.128:8500
+      services:
+         - prometheus
+  relabel_configs:
+  
+    # 标签重命名
+    - source_labels: [__meta_consul_service_id]
+      target_label: consul_service_id
+
+    # 标签值重写为 1.1.1.1:88
+    - target_label: consul_service_id
+      replacement: 1.1.1.1:88
+
+  
+    # 匹配到 __meta_consul_service ,标签重命名为 consul_service
+    - regex: __meta_(consul_service)
+      action: labelmap
+    
+    # regex 在 source_labels 里匹配到的标签重命名为 consul_service_id
+    - source_labels: ["__meta_consul_service_id"]
+      regex: "(.*)"
+      target_label: "consul_service_id"
+      action: replace
+      replacement: "$1"
+
+    # 只有在标签(__meta_consul_service_id) 里匹配到 test1 才被采集
+    #- source_labels: ["__meta_consul_service_id"]
+    #  regex: "test1"
+    #  action: keep
+
+    # 标签(__meta_consul_service_id) 里匹配到 test1 丢弃
+    #- source_labels: ["__meta_consul_service_id"]
+    #  regex: "test1"
+    #  action: drop
+
+    # 融合两个字段为新的字段
+    - source_labels: ["__meta_consul_service","__meta_consul_service_id"]
+      separator: "-"
+      regex: "(.*)"
+      target_label: consul
+      action: replace
+      replacement: "$1"
+    
+    # 对抓取的实例特定标签进行删除
+    - regex: "(job|consul_service|consul_service_id)"
+      action: labeldrop
+
+- job_name: 'blackbox'
+  metrics_path: /probe
+  params:
+    module: [http_2xx]  # Look for a HTTP 200 response.
+  consul_sd_configs:
+      - server: 192.168.73.128:8500
+        services:
+           - prometheus_domain
+  relabel_configs:
+    - source_labels: ["__meta_consul_service_address","__meta_consul_service_port"]
+      separator: ":"
+      regex: "(.*)"
+      target_label: __param_target
+      action: replace
+      replacement: "$1"
+    - regex: __meta_consul_service_metadata_(.+)
+      action: labelmap
+    - source_labels: [__param_target]
+      target_label: instance
+    - target_label: __address__
+      replacement: 192.168.73.128:9115
+
+
+rule_files:
+        - "first_rules.yml"
+alerting:
+        alertmanagers:
+                - static_configs:
+                        - targets: ['192.168.73.128:9093']
+EOF						
+
+
+
+#blackbox
+docker run --restart always -dit -p 9115:9115 --name blackbox_exporter  prom/blackbox-exporter:master --config.file=/config/blackbox.yml
+
+#通过file_fd_files 配置后我们可以在不重启prometheus的前提下， 修改对应的采集文件（node_dis.yml）， 在特定的时间内（refresh_interval），prometheus会完成配置信息的载入工作。
+
+#consul 写入检测信息
+data={
+  "id": "xxxzzz.com",
+  "name": "prometheus_domain",
+  "address": "https://xxxzzz.com",
+  "port": 443,
+  "meta": {
+    "dev": "prod"
+  },
+  "tags": [
+    "prometheus_domain"
+  ],
+  "EnableTagOverride": False,
+}
+
+#requests.put("http://192.168.73.128:8500/v1/agent/service/register",data=json.dumps(data)).status_code
+
+
+
+
+cat > first_rules.yml  <<EOF
+global:
+        resolve_timeout: 5s
+
+groups:
+- name: Node_alerta
+  rules:
+  - alert: "服务器挂了"
+    expr: up == 0
+    for: 5s
+    labels:
+      severity: 非常严重！！
+      summary: "{{ \$labels.job }} 节点 {{ \$labels.instance }}"
+      message: "Prometheus中断了与 {{ \$labels.instance }} 的连接"
+  - alert: "内存使用率高于  90%"
+    expr: ((node_memory_MemTotal_bytes - node_memory_MemFree_bytes - node_memory_Buffers_bytes - node_memory_Cached_bytes) / (node_memory_MemTotal_bytes )) * 100 > 90
+    for: 5s
+    labels:
+      severity: 严重警告！！
+      summary: "{{ \$labels.job }} 节点 {{ \$labels.instance }}"
+      message: "内存使用率{{ \$value }} %"
+  - alert: "CPU使用率高于 90%"
+    expr: 100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) by(instance)* 100) > 90
+    for: 5s
+    labels:
+      severity: 严重警告！！
+      summary: "{{ \$labels.job }} 节点 {{ \$labels.instance }} "
+      message: "cpu使用率{{ \$value }} %"
+  - alert: "文件系统使用率高于 80%"
+    expr: 100 - (node_filesystem_free_bytes{mountpoint="/",fstype=~"ext4|xfs"} / node_filesystem_size_bytes{fstype=~"ext4|xfs"} * 100) > 80
+    for: 5s
+    labels:
+      severity: 严重警告！！
+      summary: "{{ \$labels.job }} 节点 {{ \$labels.instance }} "
+      message: "文件使用率 {{ \$value }} %"
+  - alert: "IO可用性低于 20%"
+    expr: 100 - (avg(irate(node_disk_io_time_seconds_total[1m])) by(instance)* 100) < 20
+    for: 5s
+    labels:
+      severity: 严重警告！！
+      summary: "{{ \$labels.job }} 节点 {{ \$labels.instance }} "
+      message: " io可用性 {{ \$value }} %"
+  - alert: "网络接收流量带宽过高"
+    expr: ((sum(rate (node_network_receive_bytes_total{device!~'tap.*|veth.*|br.*|docker.*|virbr*|lo*'}[5m])) by (instance)) / 100) > 102400
+    for: 5s
+    labels:
+      severity: 严重警告！！
+      summary: "{{ \$labels.job }} 节点 {{ \$labels.instance }} "
+      message: "{{\$labels.mountpoint }}流入网络带宽持续2分钟高于100M. RX带宽使用率{{\$value}}"
+  - alert: "网络发送流量带宽过高"
+    expr: ((sum(rate (node_network_transmit_bytes_total{device!~'tap.*|veth.*|br.*|docker.*|virbr*|lo*'}[5m])) by (instance)) / 100) > 102400
+    for: 5s
+    labels:
+      severity: 严重警告！！
+      summary: "{{ \$labels.job }} 节点 {{ \$labels.instance }} "
+      message: "{{\$labels.mountpoint }}流出网络带宽持续2分钟高于100M. TX带宽使用率{{\$value}}"
+  - alert: "TCP 会话连接数超过10000"
+    expr: node_netstat_Tcp_CurrEstab > 10000
+    for: 5s
+    labels:
+      severity: 严重警告！！
+      summary: "{{ \$labels.job }} 节点 {{ \$labels.instance }} "
+      message: "目前连接数:{{\$value}}"
+EOF
+
+docker cp prometheus.yml  prometheus:/etc/prometheus/  
+docker cp first_rules.yml prometheus:/etc/prometheus/
+
+### 二.安装 grafana 图形监控
+
+docker run -d --name=grafana -p 3000:3000 --restart always grafana/grafana-enterprise
+
+1. http://iP:3000 在configuration 中选择添加数据源 http://IP:9090 保存
+2. 点击create import 导入 8919 图表，选择刚才创建的数据源
+3. browse查看数据面板
+
+### 三.安装alertmanager 监控告警
+
+docker run --name alertmanager -d -p 9093:9093  --restart always prom/alertmanager:latest
+cat > alertmanager.yml <<EOF
+route:
+  group_by: ['alertname']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 24h
+  receiver: 'socket'
+receivers:
+
+- name: 'socket'
+  webhook_configs:
+          - url: 'http://192.168.73.129:1001/'
+            send_resolved: true
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'dev', 'instance']
+EOF
+
+docker cp alertmanager.yml  alertmanager:/etc/alertmanager/
+docker restart alertmanager prometheus
+
+### 四.socket处理告警
+
+import socket,time,threading,json
+addr = (socket.gethostbyname(socket.gethostname()),1001)
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(addr)
+s.listen(100)
+def mess(sk):
+    while True:
+        message=sk.recv(102400).decode('utf-8','ignore')
+        if message:
+            alert=json.loads(message.split('\r\n\r\n')[1])
+            for i in alert['alerts']:
+                print("主机:     {}".format(i['labels']['summary'].split(':')[0]))
+                print("级别:     {}".format(i['labels']['severity']))
+                print("报警类型: {}".format(i['labels']['alertname']))
+                print("报警说明: {}".format(i['labels']['message']))
+                print("报警时间: {}".format(i['startsAt']))
+                print("现在时间: {}\r\n".format(time.strftime("%F %T",time.localtime(time.time()))))
+        else:
+            sk.close()
+            break
+while True:
+    sk,addr=s.accept()
+    threading.Thread(target=mess,args=(sk,)).start()
+    
+
+### 五.消息告警静默模式
+
+http://ip:9030   配置Silence
+
+### 六. 监控节点安装node-exporter
+
+cd /usr/local
+wget https://github.com/prometheus/node_exporter/releases/download/v1.3.1/node_exporter-1.3.1.linux-amd64.tar.gz
+tar xvfz node_exporter-1.3.1.linux-amd64.tar.gz
+mv node_exporter-1.3.1.linux-amd64 node_exporter
+cat >/etc/systemd/system/node_exporter.service <<EOF
+[Unit]
+Description=node_exporter
+Documentation=https://github.com/prometheus/node_exporter
+
+[Service]
+ExecStart=/usr/local/node_exporter/node_exporter
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable node_exporter
+systemctl start node_exporter
+
+### 七.监控nginx
+
+1.nginx-module-vts Nginx的监控模块，nginx-vts-exporter 主要用于收集Nginx的监控数据，并给Prometheus提供监控接口，默认端口号9913
+2.安装nginx
+cd /usr/local/src
+yum install -y gcc gcc-c++ openssl-devel pcre-devel make zlib-devel wget psmisc git
+wget http://nginx.org/download/nginx-1.21.6.tar.gz
+tar zxf nginx-1.21.6.tar.gz
+cd nginx-1.21.6
+git clone https://github.com/vozlt/nginx-module-vts.git
+./configure --prefix=/usr/local/nginx   --add-module=/usr/local/src/nginx-1.21.6/nginx-module-vts/ && make && make install
+ln -s /usr/local/nginx/sbin/nginx /usr/local/sbin/
+cat >> /etc/init.d/nginx << EOF
+#!/bin/bash
+#chkconfig: 345 85 15
+nginx=/usr/local/sbin/nginx
+conf=/usr/local/nginx/conf/nginx.conf
+case \$1 in
+start)
+\$nginx
+echo "nginx is start"
+;;
+reload)
+\$nginx -s reload
+echo "nginx reload done"
+;;
+stop)
+\$nginx -s stop
+echo "nginx is stop "
+;;
+restart)
+\$nginx -s stop 2>/dev/null
+\$nginx
+echo "nginx restart done"
+;;
+*)
+echo " "
+;;
+esac
+EOF
+chmod 755 /etc/init.d/nginx
+chkconfig --add nginx
+chkconfig nginx on
+nginx
+
+3.nginx.conf
+http {
+    	vhost_traffic_status_zone;
+    	vhost_traffic_status_filter_by_host on;
+
+server {
+  		location /status {
+        		vhost_traffic_status_display;
+        		vhost_traffic_status_display_format html;
+      }
+   }
+}
+4.配置 nginx-vts-exporter
+cd /usr/local/
+wget -c https://github.com/hnlq715/nginx-vts-exporter/releases/download/v0.9.1/nginx-vts-exporter-0.9.1.linux-amd64.tar.gz
+tar xvf nginx-vts-exporter-0.9.1.linux-amd64.tar.gz
+cat >/etc/systemd/system/nginx-vts-exporter.service <<EOF
+[Unit]
+Description=node_exporter
+Documentation=nginx-vts-exporter
+
+[Service]
+ExecStart=/usr/local/nginx-vts-exporter-0.9.1.linux-amd64/nginx-vts-exporter -nginx.scrape_timeout 10 -nginx.scrape_uri http://127.0.0.1/status/format/json
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable nginx-vts-exporter.service
+systemctl start nginx-vts-exporter.service
+
+5.配置 prometheus.yml
+- job_name: "服务器"
+  static_configs:
+          - targets: ['192.168.1.1:9100']
+       	    labels:
+          	env: first
+          	cloud: aliyun
+6.grafana 选择2949模板
+
+### 八.监控docker
+
+docker run -d --volume=/:/rootfs:ro --volume=/var/run:/var/run:ro --volume=/sys:/sys:ro --volume=/var/lib/docker/:/var/lib/docker:ro --volume=/dev/disk/:/dev/disk:ro --publish=8088:8080 --detach=true --name=cadvisor --privileged=true google/cadvisor:latest
+1.置 prometheus.yml
+
+- job_name: "docker"
+  static_configs:
+          - targets: ['192.168.73.128:8080']
+2.grafana 选择 193 模板
+
+
+#### prometheus正则表达式
+{job="dockerps",__name__!="scrape_duration_seconds",__name__!="scrape_samples_post_metric_relabeling",__name__!="scrape_samples_scraped",__name__!="scrape_series_added",__name__!="ALERTS",__name__!="ALERTS_FOR_STATE",__name__!="up"}
+
+######################################################################################################
+新建table面板
+###settings 设置选择变量 variables
+1. label_values(env)
+2. label_values(cpu_info{env=~"$env"},cloud)
+
+###设置Query
+cpu_info{job="dockerps",env=~"$env",cloud=~"$cloud"}- 0
+memory_info{job="dockerps",env=~"$env",cloud=~"$cloud"}- 0
+
+
+### 设置Transform
+merge
+filter by name
+organize fields
+
+### Overrides  
+1.Fields with name (选择query的值)
+value mappings 替换显示值
+standard options > unit
+	seconds(s)     显示秒
+	short          显示K
+	Percent(0-100) 显示百分比
+	bits/sec(SI)   显示比特流
+Cell display mode  展示模式
+Thresholds         展示色板
+2.Fields with name matching regex（正则表达式全部调整统一行宽)
+/.*./
+Column width
+150
+
+### 传递变量字方式
+node_uname_info{domainname="(none)",machine="x86_64",nodename="test1",release="4.18.0-383.el8.x86_64",sysname="Linux",version="#1 SMP Wed Apr 20 15:38:08 UTC 2022"} 1
+
+
+#### node_exporter
+curl -Lo /etc/yum.repos.d/_copr_ibotty-prometheus-exporters.repo https://copr.fedorainfracloud.org/coprs/ibotty/prometheus-exporters/repo/epel-7/ibotty-prometheus-exporters-epel-7.repo
+yum install node_exporter -y
+echo OPTIONS="--collector.textfile.directory /var/lib/node_exporter/textfile_collector --web.listen-address=':19999'" > /etc/sysconfig/node_exporter
+systemctl enable node_exporter
+systemctl start node_exporter
+sleep 2 
+ss -anplt|grep node_exporter
+

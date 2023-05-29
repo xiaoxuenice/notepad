@@ -1,0 +1,66 @@
+#!/bin/bash
+--permanent 								# 永久开放
+--timeout=60 								# 时间开放
+--zone=									# 设置的域noaddthen默认
+--add --remove --query						        # 添加与取消与查询
+--reload								# 加载，生效
+
+######################################################################################################################
+
+firewall-cmd --list-all							# 查看默认区域配置
+
+firewall-cmd --get-default-zone						# 查看默认的域
+
+firewall-cmd --get-active-zones						# 查看全部在用的域
+
+firewall-cmd --get-zones                                                # 查看全部的域
+
+firewall-cmd --set-default-zone=drop					# 设置默认区域
+
+firewall-cmd  --add-interface=ens38 --permanent  		# 根据域绑定网卡
+
+firewall-cmd  --add-protocol=   --permanent		#开放协议 
+
+firewall-cmd --add-service=ssh    --permanent				#开放服务
+
+firewall-cmd  --add-port=80/tcp --permanent    		# 开放单个端口
+
+firewall-cmd  --add-port=8388-8389/tcp --permanent    	# 开放端口范围
+
+#########################################################################################################################
+
+firewall-cmd --permanent  --add-rich-rule='rule family="ipv4" source address="192.168.1.1" port protocol="tcp" port="22" accept'       					# 根据ip开放端口
+
+firewall-cmd --permanent  --add-rich-rule='rule family="ipv4" source address="192.168.1.1" port protocol="tcp" port="22" reject'	  				# 根据ip拒绝端口
+
+firewall-cmd --permanent  --add-rich-rule='rule family="ipv4" source address="192.168.1.1"  accept'									# 根据ip接受所有端口
+
+firewall-cmd --add-masquerade --permanaent																#启用区域伪装		
+firewall-cmd --permanent  --add-forward-port=port=8080:proto=tcp:toaddr=172.17.0.2:toport=80										#端口转发
+
+firewall-cmd --permanent  --add-rich-rule='rule family=ipv4 source address=192.168.1.0/24 masquerade'									#启用富规则区域伪装
+
+firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=192.168.1.0/24 forward-port port=22  protocol=tcp to-addr=172.17.0.2 to-port=22'    		 #192访问的网段地址端口转发为172.17.0.2:22
+
+
+############################    >>>>>>>>>>        防火墙      <<<<<<<               ###############################
+
+firewall-cmd --permanent  --add-rich-rule='rule family="ipv4" source NOT  address="172.17.0.0/24" protocol value="icmp" reject'                    
+除了172.17.0.0网段的ip地址，都禁止ping。
+
+########
+firewall-cmd --add-icmp-block=echo-request --permanent         
+ 启用icmp阻塞功能(阻止所有)
+########
+1 firewall-cmd [--permanent] [--zone=zone] --list-icmp-blocks
+2 firewall-cmd [--permanent] [--zone=zone] --add-icmp-block=<icmptype>
+3 firewall-cmd [--permanent] [--zone=zone] --remove-icmp-block=<icmptype>
+4 firewall-cmd [--permanent] [--zone=zone] --query-icmp-block=<icmptype>
+他们分别用于列出zone中所阻止的所有icmp类型、添加、删除和查询某个具体的icmp类型，如果指定zone则对具体zone进行操作，否则对当前活动的zone进行操作。
+
+############################   ^^^^^^^^^^^      防火墙     ^^^^^^^^^^^^^^^^^^         ###############################
+
+启用应急模式阻断所有网络连接，以防出现紧急状况			firewall-cmd --panic-on
+禁用应急模式							firewall-cmd --panic-off
+查询应急模式							firewall-cmd --query-panic
+
