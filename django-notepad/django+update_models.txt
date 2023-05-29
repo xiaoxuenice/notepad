@@ -1,0 +1,25 @@
+
+1.将表结构改为允许为空，然后同步模型
+tgs = models.ForeignKey("tgs",on_delete=models.PROTECT,null=True,blank=True,verbose_name="域名托管商")
+
+2.保存对应的数据
+from app.models import *
+data={}
+for i in yuming.objects.filter():
+   data[i.ym]=i.tgs.tgs
+   
+3.属于设置为空
+for i in yuming.objects.filter():
+   i.tgs=None
+   i.save()
+   
+4.更换对应的表，如果模型中有其他外键链接同一个模型，添加参数related_name="tgs"，然后同步模型
+tgs = models.ForeignKey("jxs",on_delete=models.PROTECT,null=True,blank=True,related_name="tgs",verbose_name="域名托管商")
+
+5.同步数据
+from app.models import *
+for i in data:
+ a=yuming.objects.get(ym=i)
+ a.tgs=jxs.objects.get(jxs=data[i])
+ a.save()
+

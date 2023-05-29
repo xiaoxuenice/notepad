@@ -1,0 +1,390 @@
+django 3.0不需要使用pymysql,/demo/__init__.py中删除内容
+-----------------------------------------------------------------------------------------------------------------------------
+导出app数据 python3 manage.py dumpdata blog > a.json
+导入app数据 python3 manage.py loaddata a.json
+导出用户数据 python3 manage.py dumpdata auth > auth.json
+yum install -y mysql-devel gcc gcc-devel python-devel
+pip install mysqlclient==1.4.2
+pip3 install pymysql
+pip3 install django
+pip3 install gevent
+pip3 install gunicorn
+pip3 install Pillow
+-----------------------------------------------------------------------------------------------------------------------------
+django-admin startproject   web	#创建django项目
+cd web
+python3 manage.py  startapp  app	#创建APP
+python3 manage.py createsuperuser	#创建管理员	
+python3 manage.py makemigrations	
+python3 manage.py migrate			#生成迁移文件   #应用到数据库(两个一起执行)
+python3 manage.py migrate --fake	#如果迁移不成功
+mkdir templates  static				#创建index 和 静态文件
+-----------------------------------------------------------------------------------------------------------------------------
+[root@xx django]#  vim settings.py
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'python',
+        'USER': 'root',
+        'PASSWORD':'Pwd@123456',
+        'HOST':'192.168.1.2',
+        'PORT':'3306',
+	INSTALLED_APPS = ['app']      ############################圈起来划重点##################          #添加app
+	'DIRS': [os.path.join(BASE_DIR,'templates')],	    #添加模块
+	ALLOWED_HOSTS = ['*']   #允许所有用户访问
+	LANGUAGE_CODE = 'zh-hans'
+	TIME_ZONE = 'Asia/Shanghai'
+	USE_TZ = False 
+	STATIC_URL = '/static-file/'       #面向用户展示
+	STATICFILES_DIRS = [
+    os.path.join(BASE_DIR,'static'),   #html中相对static下引入相对路径
+	]
+-----------------------------------------------------------------------------------------------------------------------------
+[root@xx django]#  vim __init__.py
+import  pymysql
+pymysql.install_as_MySQLdb()
+-----------------------------------------------------------------------------------------------------------------------------
+[root@xx django]#  vim blog/models.py   								#新建模型
+class Article(models.Model):
+    site = models.ForeignKey(SITE, on_delete=models.CASCADE,verbose_name="站点")
+    name = models.CharField(max_length=50,verbose_name="名字")
+    qq = models.CharField(max_length=10)
+    addr = models.TextField(verbose_name="地址",blank=True)
+    email = models.EmailField(blank=True)                                #可以为空
+    class Meta:
+      verbose_name = '作者'
+      verbose_name_plural = '作者'
+    def __str__(self):
+        return self.name
+class SITE(models.Model):
+    site=models.CharField(max_length=50,verbose_name="站点")
+    class Meta:
+                    verbose_name = '所有站点'
+                    verbose_name_plural = '所有站点'
+    def __str__(self):
+                          return self.site
+-----------------------------------------------------------------------------------------------------------------------------	
+[root@xx django]# vim blog/admin.py                               #模型加入admin后台
+from django.contrib import admin
+from .models import  *
+admin.site.register(Author)	
+
+python3 manage.py makemigrations	
+python3 manage.py migrate                       #生成，迁移到数据库
+-----------------------------------------------------------------------------------------------------------------------------		
+		
+[root@xx django]# cat blog/views.py
+from django.shortcuts import render
+from django.core.cache import cache
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.cache import cache_page
+import time,telegram
+from blog.models import *
+from django.shortcuts import HttpResponse
+from django.http import HttpResponseRedirect
+from .forms import AddForm
+from django.shortcuts import render
+import time
+def index(request):
+    allsite=SITE.objects.all()
+    for i in allsite:
+            alls.append(i.site)       #获取所有的站点
+    if request.method == "POST":
+        ss=list(request.POST)         
+        if len(ss) == 3:
+            sort=ss[2]                #POST 请求如果是三位数，说明需要排序
+            sstt=0                    #sstt 代表排序
+    if sstt== 0:
+          siteid=SITE.objects.get(site=site).id    #获取请求的站点
+          a=Alldomain.objects.filter(site_id=siteid).order_by(sort)
+          aa.append({'n':n,"a":str(i.name).strip()})
+    return  render(request,'indexd.html',{'aa':aa,'alls':alls})
+
+-----------------------------------------------------------------------------------------------------------------------------
+[root@xx django]# vim demo/urls.py 
+from django.contrib import admin
+from django.urls import path
+from blog.views import *
+urlpatterns = [
+    path("",index),
+]
+-----------------------------------------------------------------------------------------------------------------------------
+[root@xg1 django]# cat templates/index.html 
+<!DOCTYPE html>
+<head>
+  {% load static %}
+  <title>{{ name }}</title>
+  <link rel="stylesheet" href="{%  static 'css/bootstrap.min.css' %}">
+</head>
+{% for i in wz %}
+        <span>今天的心情:{{i.tags}}</span>
+{% endfor %}
+
+        <form class="login-form" method="post">
+            <div class="input-group">
+               用户名 <input type="text" name="username"  class="input-field">
+                <label for="username" class="input-label">
+                    <span class="label-title"></span>
+                </label>
+
+            </div>
+            <div class="input-group">
+                密码<input type="password"  name="password" class="input-field">
+                <label for="password" class="input-label">
+                    <span class="label-title"></span>
+                </label>
+            </div>
+            <button type="submit" class="login-button">登录<i class="ai ai-enter"></i></button>
+        </form>
+
+
+</body></html>
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+[root@xx django]# ls
+blog  demo  manage.py  requirements.txt  static  templates
+[root@xx django]# ls blog/
+admin.py  apps.py  forms.py  __init__.py  migrations  models.py  tests.py  views.py
+[root@xx django]# ls demo/
+__init__.py  settings.py  urls.py  wsgi.py
+-----------------------------------------------------------------------------------------------------------------------------
+404
+[root@xx django]# cat demo/urls.py
+handler404 = 'blog.views.error'
+
+[root@xx django]# cat blog/views.py
+def error(request,exception=None):
+       return  HttpResponse(str("你想干什么"),status=404)
+
+-----------------------------------------------------------------------------------------------------------------------------
+python3 manager.py shell
+from .models import Article
+模型新建对象方法：
+Article.objects.create(name=name,age=age)        
+
+### 模型查询获取对象方法：	
+Article.objects.all()[:10]  	  				 #获取所有<<<<<返回直接.引用      for循环>>>>>
+Article.objects.values('name','qq')              #根据表键<<<<<返回列表里的字典   for循环>>>>>
+Article.objects.values_list('name','qq')         #获取元组形式结果(浪费内存)
+Article.objects.values_list('name',flat=True)    #列表形式
+Article.objects.get(name="xiaoxue",age="22",id=1)#获取单个
+Article.objects.get(pk=1)						#按照行查询
+Article.objects.get_or_create(name="WZT", age=23)#防止重复
+Article.objects.filter(name="xiaoxue")   		#获取值  <<<<<需要for循环>>>>>
+Article.objects.filter(name__contains="abc")  	#名称中包含 "abc"的人
+Article.objects.filter(name__icontains="abc") 	#名称中包含"abc"，且abc不区分大小写
+Article.objects.filter(name__regex="^abc") 		#正则表达式查询
+Article.objects.filter(name__iregex="^abc")  	#正则表达式不区分大小写
+Aritcle.objects.filter(name__range=(10,100)    #范围
+Article.objects.exclude(name__contains="WZ")  	#排除包含 WZ 的Article对象
+Article.objects.filter(name__contains="abc").exclude(age=23)  #找出名称含有abc, 但是排除年龄是23岁的
+Author.objects.filter(qq='3322213124').values("name")        #查看qq为3322值的名字 
+Article.objects.filter(name="tom").values_list('qq',flat=True)       #查看名为tom的文章有哪些
+Article.objects.all().exists()                                         #检查 Article 中是否有对象
+Article.objects.count()                                                #来查询数量
+#替换用filter .update(name='nnn')
+a=Article.objects.filter(id="12")
+a.update(score="0")
+
+## 对ForeignKey ,ManyToManyField, 多次执行sql语句 优化
+### select_related ##############     <<<优化一对一，多对一查询>>>>     
+Article.objects.all()[:10][1].author.name                          #同样达到目的,下面执行一句Sql语句
+a=Article.objects.all().select_related('author','title','tags')[:10][0]      #参数只能是选择模块
+a.author                                                            #不执行sql语句（优化）
+a.title                                                             #不执行sql语句（优化）
+a.tags                                                              #不执行sql语句（优化）
+### prefetch_related ##############     <<<优化一对多，多对多查询>> 
+from django.db.models import Prefetch
+queryset = Store.objects.prefetch_related(
+       Prefetch('books', queryset=Book.objects.filter(price__range=(250, 300))))
+
+prefetch_related(Prefetch('home',queryset=cdn.objects.filter().select_related('city')))
+
+   stores = []
+   for store in queryset:
+       books = [book.name for book in store.books.all()]
+       stores.append({'id': store.id, 'name': store.name, 'books': books})
+
+   return stores
+
+
+### extra 实现 别名，条件，排序等
+Article.objects.filter(author="2").extra(select={"ti":"title"})
+for i in a: print(i.ti)
+
+### annotate 聚合 计数，求和，平均数等
+from django.db.models import Count          #查询每个作者文章的数量
+Article.objects.all().values('author__name').annotate(count=Count("author__name")).values_list("author__name","count")                                                
+from django.db.models import Avg            #打分平均值
+Article.objects.values('author_id').annotate(avg_score=Avg('score')).values('author__name', 'avg_score') 
+from django.db.models import Sum            #打分和
+Article.objects.values('author__name').annotate(sum_score=Sum('score')).values('author__name', 'sum_score')
+
+#defer 排除不需要的字段
+Article.objects.all().defer('content')
+# only 仅选择需要的字段
+Author.objects.all().only('name')
+
+
+
+模型替换对象方法：
+entry = Article.objects.get(pk=1)					#必须是单个
+cheese_blog = Blog.objects.get(name="Cheddar Talk")
+entry.blog = cheese_blog						    #对象自己定义
+entry.save()
+
+模型删除对象方法：
+Article.objects.filter(name__contains="abc").delete() # 删除 名称中包含 "abc"的人
+people = Article.objects.filter(name__contains="abc")
+people.delete()
+Article.objects.all().delete() 						 # 删除所有 Article 记录
+
+模型更新对象方法：
+Article.objects.filter(name__contains="abc").update(name='xxx') # 名称中包含 "abc"的人 都改成 xxx
+a = Article.objects.get(name="WeizhongTu")
+a.name="WeizhongTu"
+a.save()  
+											# 最后不要忘了保存！！！
+可迭代的  比如：
+a = Article.objects.all()                              #<<<<<for 循环 >>>>>>
+for e in a:
+    print(e.headline)
+                            
+
+用pickle序列化到硬盘再读取出来的
+>>> import pickle
+>>> s=pickle.dumps('abcdef')
+>>> query = pickle.loads(s)     # 读取序化过的
+>>> qs = MyModel.objects.all()
+>>> qs.query = query            # 序列化过去
+
+查询结果排序：
+Author.objects.all().order_by('name')
+Author.objects.all().order_by('-name') # 在 column name 前加一个负号，可以实现倒序
+
+支持链式查询：
+Author.objects.filter(name__contains="WeizhongTu").filter(email="tuweizhong@163.com")
+Author.objects.filter(name__contains="Wei").exclude(email="tuweizhong@163.com")
+# 找出名称含有abc, 但是排除年龄是23岁的
+Article.objects.filter(name__contains="abc").exclude(age=23)
+
+不支持负索引
+Article.objects.all()[:10] 					#切片操作，前10条
+Article.objects.all()[-10:] #				#会报错！！！
+使用 reverse() 解决
+Article.objects.all().reverse()[:2] 			#最后两条
+Article.objects.all().reverse()[0] 			#最后一条
+使用 order_by，在栏目名（column name）		#前加一个负号
+Article.objects.order_by('-id')[:20] 		#id最大的20条
+
+重复的问题，使用 .distinct() 去重
+qs1 = Article.objects.filter(label__name='x')
+qs2 = Article.objects.filter(reaction__name='A + B >> C')
+qs3 = Article.objects.filter(inputer__name='aaaa')
+# 合并到一起
+qs = qs1 | qs2 | qs3
+这个时候就有可能出现重复的
+# 去重方法
+qs = qs.distinct()
+
+增加
+Author.objects.create(name=i,site_id=sitenum)
+
+
+
+#django javascript 传递参数
+
+{{ data|safe}}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+字段 说明
+id 主键自增
+name 不能为null
+age default为0
+update_time 更新为最后一次修改的时间
+基础查询方法
+get 查询单一结果，模型类实例，如果不存在会抛出模型类 DoesNotExist 异常
+filter 过滤出多个结果，返回 QuerySet 类型对象
+exclude 排除掉符合条件剩下的结果，返回 QuerySet 类型对象
+all 查询所有结果，返回 QuerySet 类型对象
+count 查询结果数量
+过滤条件
+表达语法如下：
+
+​ 属性名称__运算符=值
+
+语法 条件
+id__exact=3 (省略写法: id=3) 查询id=3的数据
+name__contains='e' 查询name包含e的数据
+name__startswith='M' 查询name以M开头的数据
+name__endswith='s' 查询name以s结尾的数据
+date__isnull=True 查询date为空的数据
+id__in=[1,2,3] 查询id为1或2或3的数据
+id__gt=3 (gt: greater than) 查询id大于3的数据
+id__gte=3 (gte: greater than equal) 查询id大于等于3的数据
+id__lt=2 (lt: less than) 查询id小于2的数据
+id__lte=2 (lte: less than equal) 查询id小于等于2的数据
+date__month=2 查询日期为二月的数据
+date__gt = '1999-01-01' 查询date1999-01-01之后的数据
+F对象
+用于属性间对比，以及一些算术运算，语法规则如下：
+
+​ F('属性名') # F参为属性名，即表的字段
+
+from demo.models import Info
+from django.db.models import F
+
+查询条件：id大于2倍age的数据
+Info.objects.filter(id__gt=F('age')*2)
+Q对象
+用于逻辑运算，与&、或|、非~ ，语法规则如下：
+
+​ Q(过滤条件)
+
+from demo.models import Info
+from django.db.models import Q
+
+查询id大于3且age小于20的数据
+(id__gt=3, age_lt=20) # 基础写法
+Q(id__gt=3) & Q(age_lt=20)
+
+查询id大于3或age小于20的数据
+Q(id__gt=3) | Q(age_lt=20)
+
+查询age不等于20的数据
+~Q(age=20)
+聚合函数
+QuerySet 和 Model.objects 都有 aggregate() 函数，可以进行统计计算
+
+aggregate()的参数是django.db.models.Aggregate 类型的对象
+返回值是字典，包含聚合计算后的结果
+格式是{'属性名_聚合类型小写': 值}，比如 {'name_sum': 10}
+Aggregate 类型的子类：
+
+Avg 平均值
+Count 数量
+Max 最大值
+Min 最小值
+Sum 求和
+StdDev 标准差
+Variance 方差
+from demo.models import Info
+from django.db.models import Avg, Count, Sum
+
+查询id大于2的人的数量和年龄的总和
+Info.objects.filter(id__gt=2).aggregate(Count('id'), Sum('age'))
