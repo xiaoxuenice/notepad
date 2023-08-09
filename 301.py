@@ -22,7 +22,7 @@ def connecting(cli_sock, _):
     cli_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65535)
     httpd_sock = socket.socket()
     try:
-        httpd_sock.connect(('20.247.108.101', 443))
+        httpd_sock.connect(('192.168.1.1', 443))
     except socket.error:
         cli_sock.close()
         return
